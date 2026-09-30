@@ -164,9 +164,8 @@ def environmental_containment(
 def containment_scope(graph: GenealogyGraph, seeds: list[str], max_depth: int) -> tuple[str, ...]:
     impacted = set(seeds)
     for seed in seeds:
-        depth = max_depth + (1 if max_depth > 1 else 0)
-        impacted.update(graph.related(seed, "upstream", depth))
-        impacted.update(graph.related(seed, "downstream", depth))
+        impacted.update(graph.related(seed, "upstream", max_depth))
+        impacted.update(graph.related(seed, "downstream", max_depth))
     return tuple(sorted(impacted))
 
 
@@ -184,9 +183,14 @@ def record_containment(
     max_depth: int,
     at: int,
 ) -> ContainmentRecord:
+    stream = f"containment:{request_id}"
+    recorded = log.read(stream)
+    if recorded:
+        event = recorded[0]
+        return ContainmentRecord(tuple(event.data["scope"]), event.sequence)
     scope = containment_scope(graph, seeds, max_depth)
     event = log.append(
-        f"containment:{request_id}",
+        stream,
         0,
         request_id,
         at,

@@ -34,7 +34,7 @@ class GenealogyGraph:
         queue = deque([(start, 0)])
         while queue:
             node, depth = queue.popleft()
-            if depth > max_depth:
+            if depth >= max_depth:
                 continue
             neighbors = (
                 [self._parents.get(node)]
