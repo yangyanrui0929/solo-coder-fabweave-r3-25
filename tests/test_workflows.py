@@ -192,6 +192,18 @@ def test_genealogy_traverses_both_directions_without_duplicates():
         GenealogyGraph({"A": "B", "B": "A"})
 
 
+def test_genealogy_related_honors_the_exact_depth_bound():
+    graph = GenealogyGraph({"A": None, "B": "A", "C": "B", "D": "C", "E": "D"})
+    assert graph.related("E", "upstream", 0) == ()
+    assert graph.related("E", "upstream", 1) == ("D",)
+    assert graph.related("E", "upstream", 2) == ("C", "D")
+    assert graph.related("A", "downstream", 0) == ()
+    assert graph.related("A", "downstream", 1) == ("B",)
+    assert graph.related("A", "downstream", 2) == ("B", "C")
+    assert graph.related("C", "upstream", 5) == ("A", "B")
+    assert graph.related("C", "downstream", 5) == ("D", "E")
+
+
 def test_chemical_age_merges_and_clips_freeze_periods():
     periods = [TimeBox(-5, 5), TimeBox(3, 8), TimeBox(20, 30)]
     assert effective_age(0, 10, periods) == 2
@@ -311,12 +323,35 @@ def test_containment_scope_is_bounded_bidirectional_and_unique():
     assert containment_scope(graph, ["B"], 1) == ("A", "B", "C")
 
 
+def test_containment_scope_uses_one_depth_caliber_up_and_down():
+    graph = GenealogyGraph({"A": None, "B": "A", "C": "B", "D": "C", "E": "D"})
+    assert containment_scope(graph, ["C"], 0) == ("C",)
+    assert containment_scope(graph, ["C"], 1) == ("B", "C", "D")
+    assert containment_scope(graph, ["C"], 2) == ("A", "B", "C", "D", "E")
+    # overlapping walks from several seeds are unioned without duplicates
+    assert containment_scope(graph, ["B", "D"], 1) == ("A", "B", "C", "D", "E")
+
+
 def test_containment_record_is_idempotent_and_binds_the_planned_scope():
     graph = GenealogyGraph({"A": None, "B": "A", "C": "B"})
     log = EventLog()
     first = record_containment(log, "RECALL-1", graph, ["B"], 1, 10)
     replay = record_containment(log, "RECALL-1", graph, ["B"], 1, 10)
     assert first == replay and first.scope == ("A", "B", "C") and first.event_sequence == 1
+
+
+def test_containment_record_replay_keeps_the_first_determined_scope():
+    graph = GenealogyGraph({"A": None, "B": "A", "C": "B", "D": "C"})
+    log = EventLog()
+    first = record_containment(log, "RECALL-1", graph, ["B"], 1, 10)
+    assert first.scope == ("A", "B", "C")
+    # a wider replay request must not re-walk the graph or widen the bound plan
+    widened = record_containment(log, "RECALL-1", graph, ["B"], 2, 20)
+    assert widened == first
+    # neither can different seeds on replay re-determine the scope
+    reseeded = record_containment(log, "RECALL-1", graph, ["D"], 2, 20)
+    assert reseeded.scope == ("A", "B", "C") and reseeded.event_sequence == 1
+    assert [event.kind for event in log.read("containment:RECALL-1")] == ["containment_planned"]
 
 
 def test_powered_assignment_combines_peak_and_maintenance_reasons():
